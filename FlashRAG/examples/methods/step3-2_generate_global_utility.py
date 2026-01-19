@@ -1,0 +1,923 @@
+import os
+os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
+from flashrag.config import Config
+from flashrag.utils import get_dataset
+from tqdm import tqdm
+import json
+import argparse
+import copy
+ 
+def naive(args):
+    save_note = "naive"
+    config_dict = {"save_note": save_note, "gpu_id": args.gpu_id, "dataset_name": args.dataset_name, "split": args.split}
+
+    from flashrag.pipeline import SequentialPipeline
+
+    # preparation
+    config = Config("my_config.yaml", config_dict)
+    all_split = get_dataset(config)
+    test_data = all_split[args.split]
+
+    pipeline = SequentialPipeline(config)
+
+    result = pipeline.run(test_data)
+
+
+def zero_shot(args):
+    save_note = "zero-shot"
+    config_dict = {"save_note": save_note, "gpu_id": args.gpu_id, "dataset_name": args.dataset_name, "split": args.split}
+
+    # preparation
+    config = Config("my_config.yaml", config_dict)
+    all_split = get_dataset(config)
+    test_data = all_split[args.split]
+
+    from flashrag.pipeline import SequentialPipeline
+    from flashrag.prompt import PromptTemplate
+
+    templete = PromptTemplate(
+        config=config,
+        system_prompt="Answer the question based on your own knowledge. Only give me the answer and do not output any other words.",
+        user_prompt="Question: {question}",
+    )
+    pipeline = SequentialPipeline(config, templete)
+    result = pipeline.naive_run(test_data)
+
+
+def aar(args):
+    """
+    Reference:
+        Zichun Yu et al. "Augmentation-Adapted Retriever Improves Generalization of Language Models as Generic Plug-In"
+        in ACL 2023.
+        Official repo: https://github.com/OpenMatch/Augmentation-Adapted-Retriever
+    """
+    # two types of checkpoint: ance / contriever
+    # retrieval_method = "AAR-contriever"  # AAR-ANCE
+    # index path of this retriever
+    retrieval_method = args.method_name
+    if "contriever" in retrieval_method:
+        index_path = "aar-contriever_Flat.index"
+    else:
+        index_path = "aar-ance_Flat.index"
+
+    model2path = {"AAR-contriever": "model/AAR-Contriever-KILT", "AAR-ANCE": "model/AAR-ANCE"}
+    model2pooling = {"AAR-contriever": "mean", "AAR-ANCE": "cls"}
+    save_note = retrieval_method
+    config_dict = {
+        "retrieval_method": retrieval_method,
+        "model2path": model2path,
+        "index_path": index_path,
+        "model2pooling": model2pooling,
+        "save_note": save_note,
+        "gpu_id": args.gpu_id,
+        "dataset_name": args.dataset_name,
+        "split": args.split,
+    }
+
+    # preparation
+    config = Config("my_config.yaml", config_dict)
+    all_split = get_dataset(config)
+    test_data = all_split[args.split]
+
+    from flashrag.pipeline import SequentialPipeline
+
+    pipeline = SequentialPipeline(config)
+    # result = pipeline.run(test_data, pred_process_fun=pred_process_fun)
+    result = pipeline.run(test_data)
+
+
+def llmlingua(args):
+    """
+    Reference:
+        Huiqiang Jiang et al. "LLMLingua: Compressing Prompts for Accelerated Inference of Large Language Models"
+        in EMNLP 2023
+        Huiqiang Jiang et al. "LongLLMLingua: Accelerating and Enhancing LLMs in Long Context Scenarios via Prompt Compression"
+        in ICLR MEFoMo 2024.
+        Official repo: https://github.com/microsoft/LLMLingua
+    """
+    refiner_name = "longllmlingua"  #
+    refiner_model_path = "model/llama-2-7b-hf"
+
+    config_dict = {
+        "refiner_name": refiner_name,
+        "refiner_model_path": refiner_model_path,
+        "llmlingua_config": {
+            "rate": 0.55,
+            "condition_in_question": "after_condition",
+            "reorder_context": "sort",
+            "dynamic_context_compression_ratio": 0.3,
+            "condition_compare": True,
+            "context_budget": "+100",
+            "rank_method": "longllmlingua",
+        },
+        "refiner_input_prompt_flag": False,
+        "save_note": "longllmlingua",
+        "gpu_id": args.gpu_id,
+        "dataset_name": args.dataset_name,
+        "split": args.split,
+    }
+
+    # preparation
+    config = Config("my_config.yaml", config_dict)
+    all_split = get_dataset(config)
+    test_data = all_split[args.split]
+
+    from flashrag.pipeline import SequentialPipeline
+
+    pipeline = SequentialPipeline(config)
+    result = pipeline.run(test_data)
+
+
+def recomp(args):
+    """
+    Reference:
+        Fangyuan Xu et al. "RECOMP: Improving Retrieval-Augmented LMs with Compression and Selective Augmentation"
+        in ICLR 2024.
+        Official repo: https://github.com/carriex/recomp
+    """
+    # ###### Specified parameters ######
+    refiner_name = "recomp-abstractive"  # recomp-extractive
+    model_dict = {
+        "nq": "model/recomp_nq_abs",
+        "triviaqa": "model/recomp_tqa_abs",
+        "hotpotqa": "model/recomp_hotpotqa_abs",
+    }
+
+    refiner_model_path = model_dict.get(args.dataset_name, None)
+    refiner_max_input_length = 1024
+    refiner_max_output_length = 512
+    # parameters for extractive compress
+    refiner_topk = 5
+    refiner_pooling_method = "mean"
+    refiner_encode_max_length = 256
+
+    config_dict = {
+        "refiner_name": refiner_name,
+        "refiner_model_path": refiner_model_path,
+        "refiner_max_input_length": refiner_max_input_length,
+        "refiner_max_output_length": refiner_max_output_length,
+        "refiner_topk": 5,
+        "refiner_pooling_method": refiner_pooling_method,
+        "refiner_encode_max_length": refiner_encode_max_length,
+        "save_note": refiner_name,
+        "gpu_id": args.gpu_id,
+        "dataset_name": args.dataset_name,
+        "split": args.split,
+    }
+
+    # preparation
+    config = Config("my_config.yaml", config_dict)
+    all_split = get_dataset(config)
+    test_data = all_split[args.split]
+
+    from flashrag.pipeline import SequentialPipeline
+
+    pipeline = SequentialPipeline(config)
+    result = pipeline.run(test_data)
+
+
+def sc(args):
+    """
+    Reference:
+        Yucheng Li et al. "Compressing Context to Enhance Inference Efficiency of Large Language Models"
+        in EMNLP 2023.
+        Official repo: https://github.com/liyucheng09/Selective_Context
+
+    Note:
+        Need to install spacy:
+            ```python -m spacy download en_core_web_sm```
+        or
+            ```
+            wget https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.6.0/en_core_web_sm-3.6.0.tar.gz
+            pip install en_core_web_sm-3.6.0.tar.gz
+            ```
+    """
+    refiner_name = "selective-context"
+    refiner_model_path = "model/gpt2"
+
+    config_dict = {
+        "refiner_name": refiner_name,
+        "refiner_model_path": refiner_model_path,
+        "sc_config": {"reduce_ratio": 0.5},
+        "save_note": "selective-context",
+        "gpu_id": args.gpu_id,
+        "dataset_name": args.dataset_name,
+        "split": args.split,
+    }
+
+    # preparation
+    config = Config("my_config.yaml", config_dict)
+    all_split = get_dataset(config)
+    test_data = all_split[args.split]
+
+    from flashrag.pipeline import SequentialPipeline
+
+    pipeline = SequentialPipeline(config)
+    result = pipeline.run(test_data)
+
+
+def retrobust(args):
+    """
+    Reference:
+        Ori Yoran et al. "Making Retrieval-Augmented Language Models Robust to Irrelevant Context"
+        in ICLR 2024.
+        Official repo: https://github.com/oriyor/ret-robust
+    """
+    model_dict = {
+        "nq": "model/llama-2-13b-peft-nq-retrobust",
+        "2wiki": "model/llama-2-13b-peft-2wikihop-retrobust",
+    }
+    if args.dataset_name in ["nq", "triviaqa", "popqa", "web_questions"]:
+        lora_path = model_dict["nq"]
+    elif args.dataset_name in ["hotpotqa", "2wikimultihopqa"]:
+        lora_path = model_dict["2wiki"]
+    else:
+        print("Not use lora")
+        lora_path = model_dict.get(args.dataset_name, None)
+    config_dict = {
+        "save_note": "Ret-Robust",
+        "generator_model": "llama2-13B",
+        "generator_lora_path": lora_path,
+        "generation_params": {"max_tokens": 100},
+        "gpu_id": args.gpu_id,
+        "generator_max_input_len": 4096,
+        "dataset_name": args.dataset_name,
+        "split": args.split,
+    }
+    config = Config("my_config.yaml", config_dict)
+    all_split = get_dataset(config)
+    test_data = all_split[args.split]
+
+    from flashrag.pipeline import SelfAskPipeline
+    from flashrag.utils import selfask_pred_parse
+
+    pipeline = SelfAskPipeline(config, max_iter=5, single_hop=False)
+    # use specify prediction parse function
+    result = pipeline.run(test_data, pred_process_fun=selfask_pred_parse)
+
+
+def sure(args):
+    """
+    Reference:
+        Jaehyung Kim et al. "SuRe: Summarizing Retrievals using Answer Candidates for Open-domain QA of LLMs"
+        in ICLR 2024
+        Official repo: https://github.com/bbuing9/ICLR24_SuRe
+    """
+    config_dict = {"save_note": "SuRe", "gpu_id": args.gpu_id, "dataset_name": args.dataset_name, "split": args.split}
+    config = Config("my_config.yaml", config_dict)
+    all_split = get_dataset(config)
+    test_data = all_split[args.split]
+
+    from flashrag.pipeline import SuRePipeline
+
+    pipeline = SuRePipeline(config)
+    pred_process_fun = lambda x: x.split("\n")[0]
+    result = pipeline.run(test_data)
+
+
+def replug(args):
+    """
+    Reference:
+        Weijia Shi et al. "REPLUG: Retrieval-Augmented Black-Box Language Models".
+    """
+    save_note = "replug"
+    config_dict = {"save_note": save_note, "gpu_id": args.gpu_id, "dataset_name": args.dataset_name, "split": args.split}
+
+    # preparation
+    config = Config("my_config.yaml", config_dict)
+    all_split = get_dataset(config)
+    test_data = all_split[args.split]
+    pred_process_fun = lambda x: x.split("\n")[0]
+
+    from flashrag.pipeline import REPLUGPipeline
+
+    pipeline = REPLUGPipeline(config)
+    result = pipeline.run(test_data)
+
+
+def skr(args):
+    """
+    Reference:
+        Yile Wang et al. "Self-Knowledge Guided Retrieval Augmentation for Large Language Models"
+        in EMNLP Findings 2023.
+        Official repo: https://github.com/THUNLP-MT/SKR/
+
+    Note:
+        `skr-knn` need training data in inference stage to determain whether to retrieve. training data should in
+        `.json` format in following format:
+        format:
+            [
+                {
+                    "question": ... ,  // question
+                    "judgement": "ir_better" / "ir_worse" / "same",  // judgement result, can be obtained by comparing
+                    ...
+                },
+                ...
+            ]
+
+    """
+    judger_name = "skr"
+    model_path = "model/sup-simcse-bert-base-uncased"
+    training_data_path = "./sample_data/skr_training.json"
+
+    config_dict = {
+        "judger_name": judger_name,
+        "judger_config": {
+            "model_path": model_path,
+            "training_data_path": training_data_path,
+            "topk": 5,
+            "batch_size": 64,
+            "max_length": 128,
+        },
+        "save_note": "skr",
+        "gpu_id": args.gpu_id,
+        "dataset_name": args.dataset_name,
+        "split": args.split,
+    }
+
+    # preparation
+    config = Config("my_config.yaml", config_dict)
+    all_split = get_dataset(config)
+    test_data = all_split[args.split]
+
+    from flashrag.pipeline import ConditionalPipeline
+
+    pipeline = ConditionalPipeline(config)
+    result = pipeline.run(test_data)
+
+
+def selfrag(args):
+    """
+    Reference:
+        Akari Asai et al. " SELF-RAG: Learning to Retrieve, Generate and Critique through self-reflection"
+        in ICLR 2024.
+        Official repo: https://github.com/AkariAsai/self-rag
+    """
+    config_dict = {
+        "generator_model": "selfrag-llama2-7B",
+        "generator_model_path": "model/selfrag_llama2_7b",
+        "framework": "vllm",
+        "save_note": "self-rag",
+        "gpu_id": args.gpu_id,
+        "generation_params": {
+            "max_tokens": 100,
+            "temperature": 0.0,
+            "top_p": 1.0,
+            "skip_special_tokens": False,
+        },
+        "dataset_name": args.dataset_name,
+        "split": args.split,
+    }
+    config = Config("my_config.yaml", config_dict)
+
+    all_split = get_dataset(config)
+    test_data = all_split[args.split]
+
+    from flashrag.pipeline import SelfRAGPipeline
+
+    pipeline = SelfRAGPipeline(
+        config,
+        threshold=0.2,
+        max_depth=2,
+        beam_width=2,
+        w_rel=1.0,
+        w_sup=1.0,
+        w_use=1.0,
+        use_grounding=True,
+        use_utility=True,
+        use_seqscore=True,
+        ignore_cont=True,
+        mode="adaptive_retrieval",
+    )
+    result = pipeline.run(test_data, long_form=False)
+
+
+def flare(args):
+    """
+    Reference:
+        Zhengbao Jiang et al. "Active Retrieval Augmented Generation"
+        in EMNLP 2023.
+        Official repo: https://github.com/bbuing9/ICLR24_SuRe
+
+    """
+    config_dict = {"save_note": "flare", "gpu_id": args.gpu_id, "dataset_name": args.dataset_name, "split": args.split}
+    config = Config("my_config.yaml", config_dict)
+    all_split = get_dataset(config)
+    test_data = all_split[args.split]
+
+    from flashrag.pipeline import FLAREPipeline
+
+    pipeline = FLAREPipeline(config)
+    result = pipeline.run(test_data)
+
+
+def iterretgen(args):
+    """
+    Reference:
+        Zhihong Shao et al. "Enhancing Retrieval-Augmented Large Language Models with Iterative
+                            Retrieval-Generation Synergy"
+        in EMNLP Findings 2023.
+
+        Zhangyin Feng et al. "Retrieval-Generation Synergy Augmented Large Language Models"
+        in EMNLP Findings 2023.
+    """
+    iter_num = 3
+    config_dict = {
+        "save_note": "iter-retgen",
+        "gpu_id": args.gpu_id,
+        "dataset_name": args.dataset_name,
+        "split": args.split,
+    }
+    # preparation
+    config = Config("my_config.yaml", config_dict)
+    all_split = get_dataset(config)
+    test_data = all_split[args.split]
+
+    from flashrag.pipeline import IterativePipeline
+
+    pipeline = IterativePipeline(config, iter_num=iter_num)
+    result = pipeline.run(test_data)
+
+
+def ircot(args):
+    """
+    Reference:
+        Harsh Trivedi et al. "Interleaving Retrieval with Chain-of-Thought Reasoning for Knowledge-Intensive Multi-Step Questions"
+        in ACL 2023
+    """
+    save_note = "ircot"
+    config_dict = {"save_note": save_note, "gpu_id": args.gpu_id, "dataset_name": args.dataset_name, "split": args.split}
+
+    from flashrag.pipeline import IRCOTPipeline
+
+    # preparation
+    config = Config("my_config.yaml", config_dict)
+    all_split = get_dataset(config)
+    test_data = all_split[args.split]
+    print(config["generator_model_path"])
+    pipeline = IRCOTPipeline(config, max_iter=5)
+
+    result = pipeline.run(test_data)
+
+
+def trace(args):
+    """
+    Reference:
+        Jinyuan Fang et al. "TRACE the Evidence: Constructing Knowledge-Grounded Reasoning Chains for Retrieval-Augmented Generation"
+    """
+
+    save_note = "trace"
+    trace_config = {
+        "num_examplars": 3,
+        "max_chain_length": 4,
+        "topk_triple_select": 5,  # num of candidate triples
+        "num_choices": 20,
+        "min_triple_prob": 1e-4,
+        "num_beams": 5,  # number of selected prob at each step of constructing chain
+        "num_chains": 20,  # number of generated chains
+        "n_context": 5,  # number of used chains in generation
+        "context_type": "triples",  # triples/triple-doc
+    }
+    config_dict = {
+        "save_note": save_note,
+        "gpu_id": args.gpu_id,
+        "dataset_name": args.dataset_name,
+        "refiner_name": "kg-trace",
+        "trace_config": trace_config,
+        "framework": "hf",  # Trance only supports using Huggingface Transformers since it needs logits of outputs
+        "split": args.split,
+    }
+
+    # preparation
+    config = Config("my_config.yaml", config_dict)
+    all_split = get_dataset(config)
+    test_data = all_split[args.split]
+    from flashrag.pipeline import SequentialPipeline
+
+    pipeline = SequentialPipeline(config)
+
+    result = pipeline.run(test_data)
+
+
+def spring(args):
+    """
+    Reference:
+        Yutao Zhu et al. "One Token Can Help! Learning Scalable and Pluggable Virtual Tokens for Retrieval-Augmented Large Language Models"
+    """
+
+    save_note = "spring"
+    config_dict = {
+        "save_note": save_note,
+        "gpu_id": args.gpu_id,
+        "dataset_name": args.dataset_name,
+        "framework": "hf",
+        "split": args.split,
+    }
+    config = Config("my_config.yaml", config_dict)
+    all_split = get_dataset(config)
+    test_data = all_split[args.split]
+
+    # download token embedding from: https://huggingface.co/yutaozhu94/SPRING
+    token_embedding_path = "llama2.7b.chat.added_token_embeddings.pt"
+
+    from flashrag.prompt import PromptTemplate
+    from flashrag.pipeline import SequentialPipeline
+    from flashrag.utils import get_generator, get_retriever
+
+    # prepare prompt and generator for Spring method
+    system_prompt = (
+        "Answer the question based on the given document."
+        "Only give me the answer and do not output any other words."
+        "\nThe following are given documents.\n\n{reference}"
+    )
+    added_tokens = [f" [ref{i}]" for i in range(1, 51)]
+    added_tokens = "".join(added_tokens)
+    user_prompt = added_tokens + "Question: {question}\nAnswer:"
+    prompt_template = PromptTemplate(config, system_prompt, user_prompt, enable_chat=False)
+
+    generator = get_generator(config)
+    generator.add_new_tokens(token_embedding_path, token_name_func=lambda idx: f"[ref{idx+1}]")
+
+    pipeline = SequentialPipeline(config=config, prompt_template=prompt_template, generator=generator)
+    result = pipeline.run(test_data)
+
+
+def adaptive(args):
+    judger_name = "adaptive-rag"
+    model_path = "illuminoplanet/adaptive-rag-classifier"
+
+    config_dict = {
+        "judger_name": judger_name,
+        "judger_config": {"model_path": model_path},
+        "save_note": "adaptive-rag",
+        "gpu_id": args.gpu_id,
+        "dataset_name": args.dataset_name,
+        "split": args.split,
+    }
+    # preparation
+    config = Config("my_config.yaml", config_dict)
+    all_split = get_dataset(config)
+    test_data = all_split[args.split]
+
+    from flashrag.pipeline import AdaptivePipeline
+
+    pipeline = AdaptivePipeline(config)
+    result = pipeline.run(test_data)
+
+def rqrag(args):
+    """
+    Function to run the RQRAGPipeline.
+    """
+    save_note = "rqrag"
+    max_depth = 3
+    config_dict = {
+        "save_note": save_note,
+        "gpu_id": args.gpu_id,
+        'framework': 'vllm',
+        'generator_max_input_len': 4096,
+        'generation_params': {'max_tokens': 512, 'skip_special_tokens': False},
+        'generator_model_path': 'zorowin123/rq_rag_llama2_7B',
+        "dataset_name": args.dataset_name,
+        "split": args.split,
+        "max_depth": max_depth
+    }
+
+    config = Config("my_config.yaml", config_dict)
+    
+    all_split = get_dataset(config)
+    test_data = all_split[args.split]
+    
+    from flashrag.pipeline import RQRAGPipeline
+    pipeline = RQRAGPipeline(config, max_depth = max_depth)
+    result = pipeline.run(test_data)
+
+
+def r1searcher(args):
+    """
+    Function to run the R1-Searcher.
+    """
+    save_note = "r1-searcher"
+    config_dict = {
+        "save_note": save_note,
+        "gpu_id": args.gpu_id,
+        'framework': 'vllm',
+        'generator_max_input_len': 16384,
+        'generation_params': {'max_tokens': 512, 'skip_special_tokens': False},
+        'generator_model_path': 'XXsongLALA/Qwen-2.5-7B-base-RAG-RL',
+        "dataset_name": args.dataset_name,
+        "split": args.split,
+    }
+
+    config = Config("my_config.yaml", config_dict)
+    
+    all_split = get_dataset(config)
+    test_data = all_split[args.split]
+    
+    from flashrag.pipeline import ReasoningPipeline
+    pipeline = ReasoningPipeline(config)
+    result = pipeline.run(test_data)
+
+def autorefine(args):
+    """
+    Function to run the AutoRefine.
+    """
+    save_note = "autorefine"
+    config_dict = {
+        "save_note": save_note,
+        "gpu_id": args.gpu_id,
+        'framework': 'vllm',
+        'generator_max_input_len': 16384,
+        'generation_params': {'max_tokens': 512, 'skip_special_tokens': False},
+        'generator_model_path': 'yrshi/AutoRefine-Qwen2.5-3B-Base',
+        "dataset_name": args.dataset_name,
+        "split": args.split,
+    }
+
+    config = Config("my_config.yaml", config_dict)
+    all_split = get_dataset(config)
+    test_data = all_split[args.split]
+    
+    from flashrag.pipeline import AutoRefinePipeline
+    pipeline = AutoRefinePipeline(config)
+    result = pipeline.run(test_data)
+
+
+def o2searcher(args):
+    """
+    Function to run the O2searcher.
+    """
+    save_note = "O2searcher"
+    config_dict = {
+        "save_note": save_note,
+        "gpu_id": args.gpu_id,
+        'framework': 'vllm',
+        'retrieval_topk': 3,
+        'generator_max_input_len': 16384,
+        'generation_params': {'max_tokens': 512, 'skip_special_tokens': False},
+        'generator_model_path': 'Jianbiao/O2-Searcher-Qwen2.5-3B-GRPO',
+        "dataset_name": args.dataset_name,
+        "split": args.split,
+    }
+
+    config = Config("my_config.yaml", config_dict)
+    all_split = get_dataset(config)
+    test_data = all_split[args.split]
+    
+    from flashrag.pipeline import O2SearcherPipeline
+    pipeline = O2SearcherPipeline(config)
+    result = pipeline.run(test_data)
+    
+def rearag(args):
+    """
+    Function to run the rearag.
+    """
+    save_note = "rearag"
+    config_dict = {
+        "save_note": save_note,
+        "gpu_id": args.gpu_id,
+        'framework': 'vllm',
+        'is_reasoning': True,
+        'generator_max_input_len': 8192 - 2 - 1024,
+        'generation_params': {'max_tokens': 1024, 'do_sample': True},
+        'generator_model_path': 'THU-KEG/ReaRAG-9B',
+        "dataset_name": args.dataset_name,
+        "split": args.split,
+    }
+
+    config = Config("my_config.yaml", config_dict)
+    all_split = get_dataset(config)
+    test_data = all_split[args.split]
+    
+    from flashrag.pipeline import ReaRAGPipeline
+    pipeline = ReaRAGPipeline(config)
+    result = pipeline.run(test_data)
+    
+def corag(args):
+    """
+    Function to run the CoRAG.
+    """
+    save_note = "corag"
+    task_desc = 'Given a search query, retrieve relevant documents that can help answer the query'
+    if args.dataset_name in ['hotpotqa', 'musique', '2wikimultihopqa', 'bamboogle']:
+        task_desc = 'Given a multi-hop question, retrieve documents that can help answer the question'
+    if args.dataset_name in ['nq', 'triviaqa']:
+        task_desc = 'Given a question, retrieve Wikipedia passages that answer the question'
+    config_dict = {
+        "save_note": save_note,
+        "gpu_id": args.gpu_id,
+        'task_desc': task_desc,
+        'framework': 'vllm',
+        'is_reasoning': True,
+        'generator_max_input_len': 4096,
+        'generation_params': {'max_tokens': 512, 'skip_special_tokens': False},
+        'generator_model_path': 'corag/CoRAG-Llama3.1-8B-MultihopQA',
+        "dataset_name": args.dataset_name,
+        "split": args.split,
+    }
+
+    config = Config("my_config.yaml", config_dict)
+    all_split = get_dataset(config)
+    test_data = all_split[args.split]
+
+    from flashrag.pipeline import CoRAGPipeline
+    pipeline = CoRAGPipeline(config)
+    result = pipeline.run(test_data)
+    
+def simpledeepsearcher(args):
+    """
+    Function to run the SimpleDeepSearcher.
+    """
+    save_note = "simpledeepsearcher"
+    config_dict = {
+        "save_note": save_note,
+        "gpu_id": args.gpu_id,
+        'framework': 'vllm',
+        'generator_max_input_len': 20480,
+        'generation_params': {'max_tokens': 2048, 'skip_special_tokens': False},
+        'generator_model_path': 'RUC-AIBOX/Qwen-7B-SimpleDeepSearcher',
+        "dataset_name": args.dataset_name,
+        "split": args.split,
+    }
+
+    config = Config("my_config.yaml", config_dict)
+    all_split = get_dataset(config)
+    test_data = all_split[args.split]   
+
+    from flashrag.pipeline import SimpleDeepSearcherPipeline
+    pipeline = SimpleDeepSearcherPipeline(config)
+    result = pipeline.run(test_data)
+
+def searchr1(args):
+    """
+    Function to run the search-r1.
+    """
+    save_note = "search-r1"
+    config_dict = {
+        "save_note": save_note,
+        "gpu_id": args.gpu_id,
+        'framework': 'vllm',
+        'is_reasoning': True,
+        'generator_max_input_len': 16384,
+        'save_intermediate_data': False,
+        'generation_params': {'max_tokens': 512, 'skip_special_tokens': False},
+        'generator_model_path': args.generator_model_path,
+        'retrieval_model_path': args.retrieval_model_path,
+        'retrieval_method': args.retrieval_method,
+        'index_path': args.index_path,
+        "dataset_name": args.dataset_name,
+        "split": args.split,
+        "experimental_notes": args.experimental_notes,
+    }
+
+    config = Config("generate_trajectory_config.yaml", config_dict)
+    # all_split = get_dataset(config)
+    # test_data = all_split[args.split]
+    # print(f'training query number: {len(test_data)}')
+    from flashrag.pipeline import SearchR1Pipeline
+    max_retrieval_num=5
+    candidate_passages_number=20
+    pipeline = SearchR1Pipeline(config, max_retrieval_num=max_retrieval_num)
+
+    # load corpus
+    print('loading corpus...')
+    id_doc = {}
+    with open('/root/paddlejob/workspace/data/FlashRAG_Dataset/retrieval_corpus/wiki18_100w.jsonl', 'r') as f:
+        for line in f:
+            data = json.loads(line)
+            id_doc[data['id']] = data['contents']
+    print('corpus loaded')
+
+    # load processed data
+    done_qids = {}
+    if os.path.exists(args.result_path):
+        with open(args.result_path, 'r') as f:
+            for line in f:
+                data = json.loads(line)
+                if data['id'] not in done_qids:
+                    done_qids[data['id']] = []
+                # if data['round_index'] not in done_qids[data['id']]:
+                done_qids[data['id']].append(data['round_index'])
+                # done_qids[data['id']][data['round_index']].append(data['candidate_passage_id'])
+
+    # read trajectory json file
+    with open(args.trajectory_path, 'r') as f:
+        trajectory_data = json.load(f)
+    searchnum_input = {i: [] for i in range(1, max_retrieval_num)}
+    for data_item in trajectory_data:
+        if 'output' in data_item and data_item['output']['retrieved_times'] > 0:
+            history_queries = []
+            for turn_item in data_item['trajectory']:
+                if turn_item['round_index'] >= max_retrieval_num:
+                    continue
+                dataid = int(data_item['id'].replace('train_', ''))
+                if dataid < args.start_qid or dataid > args.end_qid:
+                    continue 
+                if len(turn_item['candidate_passage_ids']) != candidate_passages_number:
+                    continue
+                if data_item['id'] in done_qids and turn_item['round_index'] in done_qids[data_item['id']]:
+                    continue
+                for passage_id in turn_item['candidate_passage_ids']:
+                    current_candidate_passage_text = pipeline._retrieved_docs_to_string([{'contents': id_doc[str(passage_id)]}])
+                    # current_candidate_passage_text = pipeline._retrieved_docs_to_string([{'contents': "123"}])
+                    context = turn_item['reasoning_context'] + current_candidate_passage_text
+                    new_data_item = {
+                        'id': data_item['id'],
+                        'question': data_item['question'],
+                        'golden_answers': data_item['golden_answers'],
+                        'round_index': turn_item['round_index'],
+                        'history_queries': history_queries[:],
+                        'current_query': turn_item['current_query'],
+                        'candidate_passage_id': passage_id,
+                        'context': context,
+                    }
+                    searchnum_input[turn_item['round_index']].append(new_data_item)
+                history_queries.append(turn_item['current_query'])
+    from flashrag.dataset.dataset import Dataset  
+    process_batch_size = candidate_passages_number * 8192
+    for current_turn in range(1, max_retrieval_num):
+        total_inputs = searchnum_input[current_turn]
+        for i in tqdm(range(0, len(total_inputs), process_batch_size), desc=f'processing turn {current_turn}...'):
+            batch_inputs = total_inputs[i:i+process_batch_size]
+            batch_dataset = Dataset(data=batch_inputs)
+            processed_batch_dataset = pipeline.continue_run(batch_dataset, done_turns_num=current_turn, agentic_retriever_input=args.agentic_retriever_input)
+            os.makedirs(os.path.dirname(args.result_path), exist_ok=True)
+            with open(args.result_path, 'a') as f:
+                for j in range(0, len(processed_batch_dataset.data), candidate_passages_number):
+                    data_item = processed_batch_dataset.data[j].to_dict()
+                    docid_score = {}
+                    for k in range(j, j+candidate_passages_number):
+                        data_item_k = processed_batch_dataset.data[k].to_dict()
+                        docid_score[data_item_k['candidate_passage_id']] = {
+                            'metric_score': data_item_k['output']['metric_score'],
+                            'retrieved_times': data_item_k['output']['retrieved_times'],
+                        }
+                    result_data = {
+                        'id': data_item['id'],
+                        'question': data_item['question'],
+                        'round_index': data_item['round_index'],
+                        'history_queries': data_item['history_queries'],
+                        'current_query': data_item['current_query'],
+                        'docid_score': docid_score,
+                        # 'retrieved_times': data_item['output']['retrieved_times'],
+                        # 'context': context,
+                    }
+                    f.write(json.dumps(result_data) + '\n')
+                # for processed_data in processed_batch_dataset.data:
+                #     process_data_dict = processed_data.to_dict()
+                #     process_data_dict.pop('context', None)
+                #     if 'output' in process_data_dict:
+                #         process_data_dict['output'].pop('prompt', None)
+                #         process_data_dict['output'].pop('retrieval_results', None)                        
+                    # f.write(json.dumps(processed_data.to_dict()) + '\n')
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Running exp")
+    parser.add_argument("--generator_model_path", type=str)
+    parser.add_argument("--retrieval_model_path", type=str)
+    parser.add_argument("--trajectory_path", type=str)
+    parser.add_argument("--result_path", type=str)
+    parser.add_argument("--index_path", type=str)
+    parser.add_argument("--method_name", type=str)
+    parser.add_argument("--retrieval_method", type=str, default='e5')
+    parser.add_argument("--split", type=str)
+    parser.add_argument("--dataset_name", type=str)
+    parser.add_argument("--gpu_id", type=str)
+    parser.add_argument("--start_qid", type=int, default=0)
+    parser.add_argument("--end_qid", type=int, default=1000000000)
+    parser.add_argument("--max_retrieval_num", type=int, default=5)
+    parser.add_argument("--agentic_retriever_input", action="store_true", default=False)
+    parser.add_argument("--experimental_notes", type=str, default='')
+
+    
+    func_dict = {
+        "AAR-contriever": aar,
+        "AAR-ANCE": aar,
+        "naive": naive,
+        "zero-shot": zero_shot,
+        "llmlingua": llmlingua,
+        "recomp": recomp,
+        "selective-context": sc,
+        "ret-robust": retrobust,
+        "sure": sure,
+        "replug": replug,
+        "skr": skr,
+        "selfrag": selfrag,
+        "flare": flare,
+        "iterretgen": iterretgen,
+        "ircot": ircot,
+        "trace": trace,
+        "adaptive": adaptive,
+        "rqrag": rqrag,
+        "r1-searcher": r1searcher,
+        "search-r1": searchr1,
+        "autorefine":autorefine,
+        "o2-searcher": o2searcher,
+        "rearag": rearag,
+        "corag": corag,
+        "simpledeepsearcher": simpledeepsearcher,
+    }
+
+    args = parser.parse_args()
+    func = func_dict[args.method_name]
+    func(args)
