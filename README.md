@@ -265,14 +265,6 @@ bash build_index_after_train.sh
 
 If you find this work helpful, please cite our papers:
 
-```bibtex
-@article{liu2025reasonrank,
-  title={ReasonRank: Empowering Passage Ranking with Strong Reasoning Ability},
-  author={Liu, Wenhan and Ma, Xinyu and Sun, Weiwei and Zhu, Yutao and Li, Yuchen and Yin, Dawei and Dou, Zhicheng},
-  journal={arXiv preprint arXiv:2508.07050},
-  year={2025}
-}}
-```
 
 
 ## 🤝 Acknowledge
