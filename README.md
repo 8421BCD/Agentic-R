@@ -264,6 +264,7 @@ bash build_index_after_train.sh
 ## 📄 Citation
 
 If you find this work helpful, please cite our papers:
+```bibtex
 @misc{liu2026agenticrlearningretrieveagentic,
       title={Agentic-R: Learning to Retrieve for Agentic Search}, 
       author={Wenhan Liu and Xinyu Ma and Yutao Zhu and Yuchen Li and Daiting Shi and Dawei Yin and Zhicheng Dou},
@@ -273,8 +274,7 @@ If you find this work helpful, please cite our papers:
       primaryClass={cs.IR},
       url={https://arxiv.org/abs/2601.11888}, 
 }
-
-
+```
 ## 🤝 Acknowledge
 
 Our codes are build upon [FlashRAG](https://github.com/RUC-NLPIR/FlashRAG), [Search-R1](https://github.com/PeterGriffinJin/Search-R1) and [tevatron](https://github.com/texttron/tevatron). Our work is based on the [Qwen2.5](https://huggingface.co/Qwen/Qwen2.5-7B-Instruct) model series, and we sincerely thank the Qwen team for their outstanding contributions to the open-source community.
