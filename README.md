@@ -265,14 +265,11 @@ bash build_index_after_train.sh
 
 If you find this work helpful, please cite our papers:
 ```bibtex
-@misc{liu2026agenticrlearningretrieveagentic,
-      title={Agentic-R: Learning to Retrieve for Agentic Search}, 
-      author={Wenhan Liu and Xinyu Ma and Yutao Zhu and Yuchen Li and Daiting Shi and Dawei Yin and Zhicheng Dou},
-      year={2026},
-      eprint={2601.11888},
-      archivePrefix={arXiv},
-      primaryClass={cs.IR},
-      url={https://arxiv.org/abs/2601.11888}, 
+@article{liu2026agentic,
+  title={Agentic-R: Learning to Retrieve for Agentic Search},
+  author={Liu, Wenhan and Ma, Xinyu and Zhu, Yutao and Li, Yuchen and Shi, Daiting and Yin, Dawei and Dou, Zhicheng},
+  journal={arXiv preprint arXiv:2601.11888},
+  year={2026}
 }
 ```
 ## 🤝 Acknowledge
