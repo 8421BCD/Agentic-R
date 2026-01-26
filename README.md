@@ -3,6 +3,7 @@
 <div align="center">
 <a href="https://arxiv.org/pdf/2601.11888" target="_blank"><img src=https://img.shields.io/badge/Paper-arXiv-b5212f.svg?logo=arxiv></a>
 <a href="https://huggingface.co/papers/2601.11888" target="_blank"><img src=https://img.shields.io/badge/Paper-Hugging%20Face-yellow?logo=huggingface></a>
+<a href="https://huggingface.co/collections/liuwenhan/agentic-r" target="_blank"><img src=https://img.shields.io/badge/%F0%9F%A4%97%20HuggingFace%20Models-27b3b4.svg></a>
 <a href="https://modelscope.cn/collections/lwhlwh/Agentic-R" target="_blank"><img src=https://custom-icon-badges.demolab.com/badge/ModelScope%20Models-624aff?style=flat&logo=modelscope&logoColor=white></a>
 <a href="https://opensource.org/licenses/MIT"><img alt="License" src="https://img.shields.io/badge/LICENSE-MIT-green.svg"></a>
 <a href="https://www.python.org/downloads/release/python-3100/"><img alt="Static Badge" src="https://img.shields.io/badge/Python-3.10+-blue.svg"></a>
@@ -10,6 +11,7 @@
 <h5 align="center"> If you like our project, please give us a star ⭐ on GitHub.</h5>
 
 ## 📣 Latest News
+- **[Jan 26, 2026]**: 🚀 We released our trained **[🤗search agent](https://huggingface.co/liuwenhan/triviaqa_hotpotqa_train-search-r1-ppo-qwen2.5-7b-em-iter1)** and **[🤗wikipedia corpus](https://huggingface.co/datasets/liuwenhan/retrieval_corpus)**.
 - **[Jan 15, 2026]**: 🚀 We released our full codebase and our retriever model **[🤗Agentic-R_e5](https://huggingface.co/liuwenhan/Agentic-R_e5)**.
 
 ## 1. Agentic-R Introduction
@@ -67,22 +69,24 @@ pip install transformers==4.57.1
 ├── trained_models
 │   ├── Agentic-R_e5
 │   └── triviaqa_hotpotqa_train-search-r1-ppo-qwen2.5-7b-em-iter1
+│
 ├── data
-│   ├── FlashRAG_Dataset
-│   └──── nq
-│   └──── hotpotqa
-│   └──── retrieval_corpus
-│   └──── ...
-└── {PROJECT_DIR} (i.e., Agentic-R)
+│   └── FlashRAG_Dataset
+│       ├── nq
+│       ├── hotpotqa
+│       ├── retrieval_corpus
+│       └── ...
+│
+└── {PROJECT_DIR}  (i.e., Agentic-R)
     ├── FlashRAG
-    └── Search-R1
-    └── tevatron
+    ├── Search-R1
+    ├── tevatron
     └── config.py
 ```
 
-**b**. Download the datasets for testing (such as nq, hotpotqa, ...) from [FlashRAG_Dataset](https://huggingface.co/datasets/RUC-NLPIR/FlashRAG_datasets/tree/main). 
+**b**. Download the datasets for testing (such as nq, hotpotqa, ...) from [FlashRAG_Dataset](https://huggingface.co/datasets/RUC-NLPIR/FlashRAG_datasets/tree/main) and put them under directory `{WORKSPACE_DIR}/data/FlashRAG_Dataset/`. Download our trained [search agent](https://huggingface.co/liuwenhan/triviaqa_hotpotqa_train-search-r1-ppo-qwen2.5-7b-em-iter1) and put it under directory `{WORKSPACE_DIR}/trained_models/`. Download the [retrieval corpus](https://huggingface.co/datasets/liuwenhan/retrieval_corpus) and put it under directory `{WORKSPACE_DIR}/data/FlashRAG_Dataset/`.
 
-**c**. Download [Agentic-R](https://huggingface.co/liuwenhan/Agentic-R_e5) and build the wikipedia index based on the following code:
+**c**. Download [Agentic-R](https://huggingface.co/liuwenhan/Agentic-R_e5) and put it under directory `{WORKSPACE_DIR}/trained_models/` and build the wikipedia index based on the following code:
 
 ```shell
 conda activate agentic-r
@@ -250,8 +254,9 @@ We also provide the final training data for the first iteration training, you co
 #### 3.3.2 Retriever Training
 
 ```shell
-python step4_construct_retriever_data.py
-# the parameter agentic_retriever_input is set as True, which controls the query input of the retriever
+cd tevatron/scripts/
+bash train_agentic-R.sh
+# the parameter agentic_retriever_input is set as True, which controls the query input of the retriever.
 ```
 
 After training, use the following code to build the index:
