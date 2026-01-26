@@ -292,4 +292,4 @@ For any questions or feedback, please reach out to us at [lwh@ruc.edu.cn](lwh@ru
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=star-history/star-history&type=timeline&legend=top-left)](https://www.star-history.com/#star-history/star-history&type=timeline&legend=top-left)
+[![Star History Chart](https://api.star-history.com/svg?repos=8421BCD/Agentic-R&type=timeline&legend=top-left)](https://www.star-history.com/#8421BCD/Agentic-R&type=timeline&legend=top-left)
