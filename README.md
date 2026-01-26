@@ -289,3 +289,7 @@ This project is released under the [MIT License](LICENSE).
 ## 📞 Contact
 
 For any questions or feedback, please reach out to us at [lwh@ruc.edu.cn](lwh@ruc.edu.cn).
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=star-history/star-history&type=timeline&legend=top-left)](https://www.star-history.com/#star-history/star-history&type=timeline&legend=top-left)
