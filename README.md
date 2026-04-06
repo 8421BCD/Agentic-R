@@ -11,6 +11,7 @@
 <h5 align="center"> If you like our project, please give us a star ⭐ on GitHub.</h5>
 
 ## 📣 Latest News
+- **[Apr 6, 2026]**: 🔔 Our paper has been accepted to the ACL 2026 (Findings)!
 - **[Jan 26, 2026]**: 🚀 We released our trained **[🤗search agent](https://huggingface.co/liuwenhan/triviaqa_hotpotqa_train-search-r1-ppo-qwen2.5-7b-em-iter1)** and **[🤗wikipedia corpus](https://huggingface.co/datasets/liuwenhan/retrieval_corpus)**.
 - **[Jan 15, 2026]**: 🚀 We released our full codebase and our retriever model **[🤗Agentic-R_e5](https://huggingface.co/liuwenhan/Agentic-R_e5)**.
 
